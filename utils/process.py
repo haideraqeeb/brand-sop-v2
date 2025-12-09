@@ -71,6 +71,11 @@ def create_pivot(
     Returns:
         pd.DataFrame: The pivot made from the given parameters 
     """
+    df = df[df["Status"] != "UNDEL"]
+    df = df.dropna(subset=["Status"])
+    
+    logger.info(f"Filtered DataFrame to {len(df)} rows after removing undelivered and null status.")
+
     logger.info(f"Creating pivot for {brand}, from the dates {dates[0]} to {dates[1]}")
 
     mask = (df['Created Date'].dt.date >= dates[0]) & (df['Created Date'].dt.date <= dates[1])

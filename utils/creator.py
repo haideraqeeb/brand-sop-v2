@@ -23,7 +23,6 @@ def create_excel_from_breakdown(breakdown_csv_path, config, output_excel_path):
     - config: Configuration dictionary for the company
     - output_excel_path: Path where the output Excel file will be saved
     """
-    
     # Read the breakdown CSV
     df_breakdown = pd.read_csv(breakdown_csv_path)
     
@@ -106,8 +105,6 @@ def process_breakdown(breakdown_csv_path, company_name, output_excel_path=None):
     - company_name: Name of the company to process
     - output_excel_path: Optional output path (default: company_name_output.xlsx)
     """
-    
-
     configs = fetch("configs/utr_config.json")
     
     # Get the specific company config

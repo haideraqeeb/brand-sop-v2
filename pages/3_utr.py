@@ -7,6 +7,7 @@ from utils.creator import process_breakdown, get_company_config
 from utils.breakdown import load_sheet
 from utils.upload import upload
 from utils.db import fetch
+from utils.emailer import send_email_with_attachment
 
 st.set_page_config(layout="wide")
 
@@ -52,6 +53,42 @@ try:
         help="Select the company for which you want to create the UTR sheet"
     )
     
+    # Button to send email to the client using stored config email
+    if st.button("Send Email to Client", use_container_width=True):
+        try:
+            # Ensure we have a generated UTR Excel file in the session
+            utr_excel_path = st.session_state.get("utr_excel_path")
+            if not utr_excel_path or not os.path.exists(utr_excel_path):
+                st.error("UTR file not found. Please create the UTR sheet first.")
+                raise FileNotFoundError("UTR Excel path not set or file missing.")
+
+            config = get_company_config(configs, selected_company)
+            client_email = config.get("email")
+
+            if not client_email:
+                st.error(f"No email configured for {selected_company}. Please add it in the UTR config page.")
+            else:
+                subject = f"UTR Sheet Notification - {selected_company}"
+                body = (
+                    f"Hello,\n\n"
+                    f"The UTR sheet for {selected_company} is attached with this email.\n\n"
+                    f"Regards,\n"
+                    f"Brand SOP Automation"
+                )
+
+                attachment_filename = f"UTR_{selected_company}.xlsx"
+                send_email_with_attachment(
+                    client_email,
+                    subject,
+                    body,
+                    utr_excel_path,
+                    attachment_filename=attachment_filename,
+                )
+                st.success(f"Email sent to {client_email}")
+        except Exception as e:
+            st.error(f"Failed to send email: {str(e)}")
+            st.exception(e)
+
     if st.button("Create UTR Sheet", type="primary", use_container_width=True):
         with st.spinner(f"Processing UTR for {selected_company}..."):
             try:
@@ -95,11 +132,13 @@ try:
                 st.info(f"Uploading to sheet: {utr_sheet_name}")
                 
                 upload(df_utr, "final_sheet", utr_sheet_name)
-                
-                # Step 8: Clean up temporary files
+
+                # Step 8: Store Excel path in session for emailing and clean up CSV
+                st.session_state["utr_excel_path"] = temp_excel_path
+                st.session_state["utr_company_name"] = selected_company
+
                 try:
                     os.unlink(temp_csv_path)
-                    os.unlink(temp_excel_path)
                 except:
                     pass
                 
