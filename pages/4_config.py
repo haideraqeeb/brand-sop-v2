@@ -58,10 +58,7 @@ company_name = st.text_input("Company Name")
 if not company_name:
     st.stop()
 
-st.subheader("2. Enter Company Email")
-company_email = st.text_input("Company Email")
-
-st.subheader("3. Add Header Lines")
+st.subheader("2. Add Header Lines")
 
 num_headers = st.number_input(
     "Number of Header Lines",
@@ -74,11 +71,11 @@ header_inputs = []
 for i in range(num_headers):
     header_inputs.append(st.text_input(f"Header Line {i+1}", key=f"header_{i}"))
 
-st.subheader("4. Number of Empty Line Gaps After Headers")
+st.subheader("3. Number of Empty Line Gaps After Headers")
 
 line_gaps = st.number_input("Line Gaps", min_value=0, max_value=10, value=1)
 
-st.subheader("5. Column Mapping")
+st.subheader("4. Column Mapping")
 
 st.write("Now map this company's column names to your internal data columns.")
 
@@ -109,12 +106,11 @@ for i in range(num_company_columns):
         column_mapping[company_col_name] = internal_col
 
 
-st.subheader("6. UTR Column Name")
+st.subheader("5. UTR Column Name")
 utr_column_name = st.text_input("UTR Column Name", value="UTR")
 
 config = {
     "company_name": company_name,
-    "email": company_email,
     "headers": header_inputs,
     "line_gaps": line_gaps,
     "column_mapping": column_mapping,

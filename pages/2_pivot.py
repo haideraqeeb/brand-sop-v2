@@ -9,7 +9,7 @@ import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
-from utils.sheet_manager import get_current_sheet_id
+from utils.sheet_manager import get_current_sheet_id, update_sheet_id
 from utils.upload import upload
 from utils.process import create_pivot
 
@@ -41,6 +41,28 @@ if st.sidebar.button("Update Config", use_container_width=True):
     st.switch_page("pages/4_config.py")
 
 st.title("Create Pivot")
+
+st.markdown("### Sheet ID Configuration")
+current_final_sheet_id = get_current_sheet_id("brand_pivot_table")
+
+st.markdown("#### Current Sheet ID")
+st.code(current_final_sheet_id, language="text")
+
+st.markdown("#### Update Sheet ID")
+final_sheet_id_input = st.text_input(
+    "Enter Google Sheet ID for pivot/breakdown uploads",
+    value=current_final_sheet_id or ""
+)
+
+if st.button("Save Sheet ID"):
+    if final_sheet_id_input.strip() == "":
+        st.error("Sheet ID cannot be empty.")
+    else:
+        update_sheet_id(final_sheet_id_input.strip(), "brand_pivot_table")
+        st.success("Sheet ID updated successfully.")
+        st.rerun()
+
+st.write("---")
 
 # cache
 @st.cache_resource
@@ -84,6 +106,14 @@ with col2:
     )
 
 if st.button("Process"):
+    sheet_id = (final_sheet_id_input or current_final_sheet_id or "").strip()
+    if not sheet_id:
+        st.error("Please enter a Google Sheet ID.")
+        st.stop()
+
+    # Persist the chosen sheet ID for future sessions/requests
+    update_sheet_id(sheet_id, "brand_pivot_table")
+
     st.success("Processing pivot...")
 
     pivot = create_pivot(
@@ -96,8 +126,9 @@ if st.button("Process"):
 
     upload(
         pivot,
-        table_name="final_sheet",
-        sheet_name=f"Pivot: {selected_brand}"
+        table_name="brand_pivot_table",
+        sheet_name=f"Pivot: {selected_brand}",
+        sheet_id=sheet_id
     )
 
     # breakdown will exist only if create_pivot generated it
@@ -106,12 +137,12 @@ if st.button("Process"):
     if os.path.exists(breakdown_path):
         breakdown = pd.read_csv(breakdown_path, index_col=0)
 
-        if not breakdown.empty:
-            upload(
-                breakdown,
-                table_name="final_sheet",
-                sheet_name=f"Breakdown: {selected_brand}"
-            )
+        upload(
+            breakdown,
+            table_name="brand_pivot_table",
+            sheet_name=f"Breakdown: {selected_brand}",
+            sheet_id=sheet_id
+        )
 
     # Cleanup
     if os.path.exists("temp"):

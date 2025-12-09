@@ -7,7 +7,7 @@ from utils.creator import process_breakdown, get_company_config
 from utils.breakdown import load_sheet
 from utils.upload import upload
 from utils.db import fetch
-from utils.emailer import send_email_with_attachment
+from utils.sheet_manager import get_current_sheet_id, update_sheet_id
 
 st.set_page_config(layout="wide")
 
@@ -35,6 +35,26 @@ if st.sidebar.button("Update Config", use_container_width=True):
 # Main content
 st.title("Create UTR Sheet")
 
+st.markdown("### Current Sheet ID")
+current_pivot_sheet_id = get_current_sheet_id("brand_utr_table")
+st.code(current_pivot_sheet_id or "Not set", language="text")
+
+# UTR target sheet
+st.markdown("#### Update Sheet ID")
+current_utr_sheet_id = get_current_sheet_id("brand_utr_table")
+utr_sheet_id_input = st.text_input(
+    "Enter Google Sheet ID for UTR uploads",
+    value=current_utr_sheet_id or ""
+)
+
+if st.button("Save UTR Sheet ID"):
+    if utr_sheet_id_input.strip() == "":
+        st.error("Sheet ID cannot be empty.")
+    else:
+        update_sheet_id(utr_sheet_id_input.strip(), "brand_utr_table")
+        st.success("UTR sheet ID updated successfully.")
+        st.rerun()
+
 # Load configs
 try:
     configs = fetch("configs/utr_config.json")
@@ -53,50 +73,25 @@ try:
         help="Select the company for which you want to create the UTR sheet"
     )
     
-    # Button to send email to the client using stored config email
-    if st.button("Send Email to Client", use_container_width=True):
-        try:
-            # Ensure we have a generated UTR Excel file in the session
-            utr_excel_path = st.session_state.get("utr_excel_path")
-            if not utr_excel_path or not os.path.exists(utr_excel_path):
-                st.error("UTR file not found. Please create the UTR sheet first.")
-                raise FileNotFoundError("UTR Excel path not set or file missing.")
-
-            config = get_company_config(configs, selected_company)
-            client_email = config.get("email")
-
-            if not client_email:
-                st.error(f"No email configured for {selected_company}. Please add it in the UTR config page.")
-            else:
-                subject = f"UTR Sheet Notification - {selected_company}"
-                body = (
-                    f"Hello,\n\n"
-                    f"The UTR sheet for {selected_company} is attached with this email.\n\n"
-                    f"Regards,\n"
-                    f"Brand SOP Automation"
-                )
-
-                attachment_filename = f"UTR_{selected_company}.xlsx"
-                send_email_with_attachment(
-                    client_email,
-                    subject,
-                    body,
-                    utr_excel_path,
-                    attachment_filename=attachment_filename,
-                )
-                st.success(f"Email sent to {client_email}")
-        except Exception as e:
-            st.error(f"Failed to send email: {str(e)}")
-            st.exception(e)
-
     if st.button("Create UTR Sheet", type="primary", use_container_width=True):
+        pivot_sheet_id = get_current_sheet_id("brand_pivot_table")
+        utr_sheet_id = current_utr_sheet_id.strip()
+
+        if not pivot_sheet_id:
+            st.error("Please set the Pivot/Breakdown sheet ID in the Pivot page first.")
+            st.stop()
+
+        if not utr_sheet_id:
+            st.error("Please enter the Google Sheet ID for UTR uploads.")
+            st.stop()
+
         with st.spinner(f"Processing UTR for {selected_company}..."):
             try:
                 # Step 1: Load breakdown sheet
                 breakdown_sheet_name = f"Breakdown: {selected_company}"
                 st.info(f"Loading breakdown sheet: {breakdown_sheet_name}")
                 
-                df_breakdown = load_sheet(breakdown_sheet_name)
+                df_breakdown = load_sheet(breakdown_sheet_name, sheet_id=pivot_sheet_id)
                 
                 if df_breakdown is None or df_breakdown.empty:
                     st.error(f"Breakdown sheet '{breakdown_sheet_name}' does not exist or is empty. Please create the breakdown sheet first.")
@@ -131,14 +126,15 @@ try:
                 utr_sheet_name = f"UTR: {selected_company}"
                 st.info(f"Uploading to sheet: {utr_sheet_name}")
                 
-                upload(df_utr, "final_sheet", utr_sheet_name)
+                upload(df_utr, "brand_utr_table", utr_sheet_name, sheet_id=utr_sheet_id)
 
-                # Step 8: Store Excel path in session for emailing and clean up CSV
-                st.session_state["utr_excel_path"] = temp_excel_path
-                st.session_state["utr_company_name"] = selected_company
-
+                # Step 8: Clean up temporary files
                 try:
                     os.unlink(temp_csv_path)
+                except:
+                    pass
+                try:
+                    os.unlink(temp_excel_path)
                 except:
                     pass
                 

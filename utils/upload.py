@@ -58,7 +58,7 @@ def sanitize_dataframe(df):
     return result
 
 
-def upload(df, table_name, sheet_name):
+def upload(df, table_name, sheet_name, sheet_id=None):
     """
     Upload the sheet into the given sheet ID and sheet name
 
@@ -66,8 +66,12 @@ def upload(df, table_name, sheet_name):
         df (pd.DataFrame): The DataFrame which needs to be uploaded
         table_name (str): The type of table which needs to be uploaded, eg: master_sheet
         sheet_name (str): The name of the worksheet to upload to, eg: Pivot Table
+        sheet_id (str, optional): Explicit Google Sheet ID to target. If omitted, falls back to Supabase lookup.
     """
-    SHEET_ID = get_current_sheet_id(table_name)
+    SHEET_ID = sheet_id or get_current_sheet_id(table_name)
+
+    if not SHEET_ID:
+        raise ValueError("Sheet ID is required to upload data.")
     WORKSHEET_TITLE = sheet_name
 
     logger.info("Starting upload to Google Sheet: %s, worksheet: %s", SHEET_ID, WORKSHEET_TITLE)

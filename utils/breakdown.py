@@ -19,17 +19,22 @@ logger = logging.getLogger(__name__)
 SERVICE_ACCOUNT_JSON_STRING = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 
-def load_sheet(sheet_name: str) -> Optional[pd.DataFrame]:
+def load_sheet(sheet_name: str, sheet_id: Optional[str] = None) -> Optional[pd.DataFrame]:
     """
     Loads a worksheet from a Google Sheet and returns it as a clean DataFrame.
 
     Parameters:
         sheet_name (str): Worksheet/tab name to load
+        sheet_id (str, optional): Explicit Google Sheet ID. If not provided, falls back to the configured final_sheet ID.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame of the worksheet data, or None if not found
     """
-    sheet_id = get_current_sheet_id("final_sheet")
+    sheet_id = sheet_id or get_current_sheet_id("brand_pivot_table")
+
+    if not sheet_id:
+        logger.error("No sheet ID provided or configured.")
+        return None
 
     logger.info("Authenticating with Google Sheets API")
     try:

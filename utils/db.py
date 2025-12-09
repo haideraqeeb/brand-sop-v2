@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import certifi
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from urllib.parse import quote_plus
@@ -19,7 +20,14 @@ def get_mongo_collection():
     app_name = os.getenv("MONGO_APPNAME")
 
     uri = f"mongodb+srv://{username}:{password}@{cluster}/?retryWrites=true&w=majority&appName={app_name}"
-    client = MongoClient(uri, server_api=ServerApi('1'))
+    mongo_kwargs = {"server_api": ServerApi('1'), "tlsCAFile": certifi.where()}
+
+    # Allow disabling cert verification via env for local/dev troubleshooting
+    if os.getenv("MONGO_ALLOW_INVALID_CERTS", "").lower() == "true":
+        mongo_kwargs.pop("tlsCAFile", None)
+        mongo_kwargs["tlsAllowInvalidCertificates"] = True
+
+    client = MongoClient(uri, **mongo_kwargs)
     db = client["olambit"]
     return db["olambit-static-files"]
 
