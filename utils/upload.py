@@ -7,6 +7,7 @@ import pandas as pd
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
+from openpyxl import load_workbook
 
 from utils.sheet_manager import get_current_sheet_id
 
@@ -240,3 +241,193 @@ def append_rolling_data(df, table_name, sheet_name, max_rows=300000):
     
     worksheet.append_rows(data_to_add, value_input_option="USER_ENTERED")
     logger.info("Append complete. Added %d rows. Final count should be ~%d rows.", len(data_to_add), final_row_count)
+
+
+def upload_excel(excel_path: str, table_name: str, sheet_name: str, sheet_id: str = None):
+    """
+    Upload an Excel file directly to a Google Sheet without using Drive import.
+    Converts the Excel into values and applies basic formatting (bold/fills) based
+    on the Excel styles.
+
+    Parameters:
+        excel_path (str): Path to the Excel file to upload.
+        table_name (str): Table name used to look up the default Sheet ID.
+        sheet_name (str): Target worksheet title inside the destination spreadsheet.
+        sheet_id (str, optional): Explicit Google Sheet ID to target. If omitted, falls back to Supabase lookup.
+    """
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Excel file not found: {excel_path}")
+
+    SHEET_ID = sheet_id or get_current_sheet_id(table_name)
+    if not SHEET_ID:
+        raise ValueError("Sheet ID is required to upload data.")
+
+    logger.info("Starting Excel upload to Google Sheet: %s, worksheet: %s", SHEET_ID, sheet_name)
+
+    # Read Excel values and basic styles
+    wb = load_workbook(excel_path)
+    ws = wb.active
+    max_row, max_col = ws.max_row, ws.max_column
+
+    values = []
+    bold_cells = {}
+    header_fill_row = None
+    header_fill_color = None
+
+    for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_row, min_col=1, max_col=max_col), start=1):
+        row_values = []
+        for c_idx, cell in enumerate(row, start=1):
+            row_values.append("" if cell.value is None else cell.value)
+
+            if cell.font and cell.font.bold:
+                bold_cells.setdefault(r_idx, []).append(c_idx)
+
+            if (
+                cell.fill
+                and cell.fill.fill_type == "solid"
+                and cell.fill.start_color
+                and cell.fill.start_color.rgb
+                and cell.fill.start_color.rgb.lower() not in ("00000000", "ffffffff")
+            ):
+                header_fill_row = r_idx
+                header_fill_color = cell.fill.start_color.rgb
+
+        values.append(row_values)
+
+    # Authenticate (Sheets scope only)
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
+    credentials = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+    client = gspread.authorize(credentials)
+    sheet = client.open_by_key(SHEET_ID)
+
+    # Delete existing worksheet with the same name (if present) to avoid conflicts.
+    try:
+        existing_ws = sheet.worksheet(sheet_name)
+        sheet.del_worksheet(existing_ws)
+        logger.info("Deleted existing worksheet named '%s' before upload", sheet_name)
+    except gspread.WorksheetNotFound:
+        logger.info("No existing worksheet named '%s' found; continuing", sheet_name)
+
+    # Create new worksheet sized to the data
+    worksheet = sheet.add_worksheet(
+        title=sheet_name,
+        rows=str(max(len(values), 100)),
+        cols=str(max_col + 5),
+    )
+
+    worksheet_sheet_id = getattr(worksheet, "id", None) or worksheet._properties.get("sheetId")
+
+    # Upload values
+    worksheet.update("A1", values)
+
+    # Build formatting requests (bold, header fill/alignment, column widths)
+    requests = []
+
+    # Helper to convert ARGB hex to Sheets color dict
+    def _hex_to_color(argb: str) -> dict:
+        hex_part = argb[-6:]  # drop alpha if present
+        r = int(hex_part[0:2], 16) / 255
+        g = int(hex_part[2:4], 16) / 255
+        b = int(hex_part[4:6], 16) / 255
+        return {"red": r, "green": g, "blue": b}
+
+    # Header fill + alignment (apply to the row that had a fill in Excel)
+    if header_fill_row and header_fill_color:
+        requests.append(
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": worksheet_sheet_id,
+                        "startRowIndex": header_fill_row - 1,
+                        "endRowIndex": header_fill_row,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": max_col,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "backgroundColor": _hex_to_color(header_fill_color),
+                            "horizontalAlignment": "CENTER",
+                            "verticalAlignment": "MIDDLE",
+                            "textFormat": {"bold": True},
+                        }
+                    },
+                    "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat.bold)",
+                }
+            }
+        )
+
+    # Bold cells (apply only to cells that were bold in Excel)
+    for r_idx, cols in bold_cells.items():
+        cols = sorted(cols)
+        start = cols[0]
+        end = cols[0]
+        for col in cols[1:]:
+            if col == end + 1:
+                end = col
+            else:
+                requests.append(
+                    {
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": worksheet_sheet_id,
+                                "startRowIndex": r_idx - 1,
+                                "endRowIndex": r_idx,
+                                "startColumnIndex": start - 1,
+                                "endColumnIndex": end,
+                            },
+                            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                            "fields": "userEnteredFormat.textFormat.bold",
+                        }
+                    }
+                )
+                start = col
+                end = col
+        requests.append(
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": worksheet_sheet_id,
+                        "startRowIndex": r_idx - 1,
+                        "endRowIndex": r_idx,
+                        "startColumnIndex": start - 1,
+                        "endColumnIndex": end,
+                    },
+                    "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                    "fields": "userEnteredFormat.textFormat.bold",
+                }
+            }
+        )
+
+    # Column widths: approximate based on content length (cap at 50 chars)
+    col_widths = []
+    for col_idx in range(max_col):
+        max_len = 0
+        for row in values:
+            if col_idx < len(row):
+                val_len = len(str(row[col_idx])) if row[col_idx] is not None else 0
+                if val_len > max_len:
+                    max_len = val_len
+        col_widths.append(min(max_len + 2, 50))
+
+    for idx, width in enumerate(col_widths):
+        # Rough conversion: 1 char ~ 7 pixels
+        pixel_size = int(width * 7)
+        requests.append(
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": worksheet_sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": idx,
+                        "endIndex": idx + 1,
+                    },
+                    "properties": {"pixelSize": pixel_size},
+                    "fields": "pixelSize",
+                }
+            }
+        )
+
+    if requests:
+        sheet.batch_update({"requests": requests})
+        logger.info("Applied %d formatting requests", len(requests))

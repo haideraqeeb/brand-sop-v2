@@ -1,11 +1,10 @@
 import streamlit as st
-import pandas as pd
 import tempfile
 import os
 
 from utils.creator import process_breakdown, get_company_config
 from utils.breakdown import load_sheet
-from utils.upload import upload
+from utils.upload import upload_excel
 from utils.db import fetch
 from utils.sheet_manager import get_current_sheet_id, update_sheet_id
 
@@ -118,17 +117,14 @@ try:
                     company_name=selected_company,
                     output_excel_path=temp_excel_path
                 )
-                
-                # Step 6: Read the created Excel file
-                df_utr = pd.read_excel(temp_excel_path)
-                
-                # Step 7: Upload to Google Sheets
+
+                # Step 6: Upload Excel directly to Google Sheets (preserves formatting)
                 utr_sheet_name = f"UTR: {selected_company}"
                 st.info(f"Uploading to sheet: {utr_sheet_name}")
-                
-                upload(df_utr, "brand_utr_table", utr_sheet_name, sheet_id=utr_sheet_id)
 
-                # Step 8: Clean up temporary files
+                upload_excel(temp_excel_path, "brand_utr_table", utr_sheet_name, sheet_id=utr_sheet_id)
+
+                # Step 7: Clean up temporary files
                 try:
                     os.unlink(temp_csv_path)
                 except:

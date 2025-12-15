@@ -71,6 +71,10 @@ def create_pivot(
     Returns:
         pd.DataFrame: The pivot made from the given parameters 
     """
+    df = df.copy()
+
+    df["POD Date"] = pd.to_datetime(df["POD Date"], errors="coerce")
+
     df = df[df["Status"] != "UNDEL"]
     df = df.dropna(subset=["Status"])
     
@@ -78,7 +82,7 @@ def create_pivot(
 
     logger.info(f"Creating pivot for {brand}, from the dates {dates[0]} to {dates[1]}")
 
-    mask = (df['Created Date'].dt.date >= dates[0]) & (df['Created Date'].dt.date <= dates[1])
+    mask = (df['POD Date'].dt.date >= dates[0]) & (df['POD Date'].dt.date <= dates[1])
 
     df = df.loc[mask]
 
